@@ -11,7 +11,7 @@ from mmdet.models import build_detector
 import torch
 
 
-def parse_args():
+def parse_args(args):
     parser = argparse.ArgumentParser(description='Train a detector')
     parser.add_argument('config', help='train config file path')
     parser.add_argument('--work_dir', help='the dir to save logs and models')
@@ -34,13 +34,13 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     return args
 
 
-def main():
-    args = parse_args()
+def main(args):
+    args = parse_args(args)
 
     cfg = Config.fromfile(args.config)
     # set cudnn_benchmark
@@ -87,4 +87,12 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import os
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
+
+    arguments = [
+        'myconfigs/cascade_rcnn_r50_fpn_1x.py',
+        '--gpus=2',
+    ]
+    main(arguments)
