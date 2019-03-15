@@ -25,7 +25,12 @@ class ImageTransform(object):
         self.to_rgb = to_rgb
         self.size_divisor = size_divisor
 
-    def __call__(self, img, scale, flip=False, keep_ratio=True):
+    def __call__(self, img, scale, flip=False, keep_ratio=True, flip_ud=False, transpose=False):
+        if transpose:
+            img = img.transpose(1, 0, 2)
+            sl = list(scale)
+            sl.reverse()
+            scale = tuple(sl)
         if keep_ratio:
             img, scale_factor = mmcv.imrescale(img, scale, return_scale=True)
         else:
@@ -37,6 +42,8 @@ class ImageTransform(object):
         img = mmcv.imnormalize(img, self.mean, self.std, self.to_rgb)
         if flip:
             img = mmcv.imflip(img)
+        if flip_ud:
+            img = mmcv.imflip(img, direction='vertical')
         if self.size_divisor is not None:
             img = mmcv.impad_to_multiple(img, self.size_divisor)
             pad_shape = img.shape
@@ -61,6 +68,37 @@ def bbox_flip(bboxes, img_shape):
     return flipped
 
 
+def bbox_flip_ud(bboxes, img_shape):
+    """Flip bboxes vertically.
+
+    Args:
+        bboxes(ndarray): shape (..., 4*k)
+        img_shape(tuple): (height, width)
+    """
+    assert bboxes.shape[-1] % 4 == 0
+    h = img_shape[0]
+    flipped = bboxes.copy()
+    flipped[..., 1::4] = h - bboxes[..., 3::4] - 1
+    flipped[..., 3::4] = h - bboxes[..., 1::4] - 1
+    return flipped
+
+
+def bbox_transpose(bboxes, img_shape=None):
+    """transpose bboxes (not equals rot 90 anti-clock).
+
+    Args:
+        bboxes(ndarray): shape (..., 4*k)
+        # img_shape(tuple): (height, width)
+    """
+    assert bboxes.shape[-1] % 4 == 0
+    flipped = bboxes.copy()
+    xs = flipped[..., 0::2].copy()
+    flipped[..., 0::2] = flipped[..., 1::2]
+    flipped[..., 1::2] = xs
+
+    return flipped
+
+
 class BboxTransform(object):
     """Preprocess gt bboxes.
 
@@ -72,8 +110,14 @@ class BboxTransform(object):
     def __init__(self, max_num_gts=None):
         self.max_num_gts = max_num_gts
 
-    def __call__(self, bboxes, img_shape, scale_factor, flip=False):
-        gt_bboxes = bboxes * scale_factor
+    def __call__(self, bboxes, img_shape, scale_factor, flip=False, flip_ud=False, transpose=False):
+        gt_bboxes = bboxes
+        if transpose:
+            gt_bboxes = bbox_transpose(gt_bboxes, img_shape)
+        gt_bboxes = gt_bboxes * scale_factor
+        if flip_ud:
+            gt_bboxes = bbox_flip_ud(gt_bboxes, img_shape)
+
         if flip:
             gt_bboxes = bbox_flip(gt_bboxes, img_shape)
         gt_bboxes[:, 0::2] = np.clip(gt_bboxes[:, 0::2], 0, img_shape[1])

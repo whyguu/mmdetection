@@ -58,8 +58,8 @@ class PhotoMetricDistortion(object):
                 img *= alpha
 
         # randomly swap channels
-        if random.randint(2):
-            img = img[..., random.permutation(3)]
+        # if random.randint(2):
+        #     img = img[..., random.permutation(3)]
 
         return img, boxes, labels
 

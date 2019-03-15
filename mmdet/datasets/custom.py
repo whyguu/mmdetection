@@ -9,6 +9,7 @@ from .transforms import (ImageTransform, BboxTransform, MaskTransform,
                          Numpy2Tensor)
 from .utils import to_tensor, random_scale
 from .extra_aug import ExtraAugmentation
+import cv2
 
 
 class CustomDataset(Dataset):
@@ -44,6 +45,9 @@ class CustomDataset(Dataset):
                  proposal_file=None,
                  num_max_proposals=1000,
                  flip_ratio=0,
+                 flip_ud_ratio=0,
+                 transpose_ratio=0,
+                 blur_ratio=0,
                  with_mask=True,
                  with_crowd=True,
                  with_label=True,
@@ -77,7 +81,13 @@ class CustomDataset(Dataset):
         self.num_max_proposals = num_max_proposals
         # flip ratio
         self.flip_ratio = flip_ratio
+        self.flip_ud_ratio = flip_ud_ratio
+        self.transpose_ratio = transpose_ratio
+        self.blur_ratio = blur_ratio
         assert flip_ratio >= 0 and flip_ratio <= 1
+        assert 0 <= flip_ud_ratio <= 1
+        assert 0 <= transpose_ratio <= 1
+        assert 0 <= blur_ratio <= 1
         # padding border to ensure the image size can be divided by
         # size_divisor (used for FPN)
         self.size_divisor = size_divisor
@@ -161,6 +171,9 @@ class CustomDataset(Dataset):
         img_info = self.img_infos[idx]
         # load image
         img = mmcv.imread(osp.join(self.img_prefix, img_info['filename']))
+        if np.random.rand() < self.blur_ratio:
+            sigma = np.random.randint(0, 21)
+            img = cv2.GaussianBlur(img, (15, 15), sigma)
         # load proposals if necessary
         if self.proposals is not None:
             proposals = self.proposals[idx][:self.num_max_proposals]
@@ -196,20 +209,22 @@ class CustomDataset(Dataset):
 
         # apply transforms
         flip = True if np.random.rand() < self.flip_ratio else False
+        flip_ud = True if np.random.rand() < self.flip_ud_ratio else False
+        transpose = True if np.random.rand() < self.transpose_ratio else False
         img_scale = random_scale(self.img_scales)  # sample a scale
         img, img_shape, pad_shape, scale_factor = self.img_transform(
-            img, img_scale, flip, keep_ratio=self.resize_keep_ratio)
+            img, img_scale, flip, flip_ud=flip_ud, keep_ratio=self.resize_keep_ratio, transpose=transpose)
         img = img.copy()
         if self.proposals is not None:
             proposals = self.bbox_transform(proposals, img_shape, scale_factor,
-                                            flip)
+                                            flip, flip_ud, transpose)
             proposals = np.hstack(
                 [proposals, scores]) if scores is not None else proposals
         gt_bboxes = self.bbox_transform(gt_bboxes, img_shape, scale_factor,
-                                        flip)
+                                        flip, flip_ud, transpose)
         if self.with_crowd:
             gt_bboxes_ignore = self.bbox_transform(gt_bboxes_ignore, img_shape,
-                                                   scale_factor, flip)
+                                                   scale_factor, flip, flip_ud, transpose)
         if self.with_mask:
             gt_masks = self.mask_transform(ann['masks'], pad_shape,
                                            scale_factor, flip)
@@ -220,7 +235,9 @@ class CustomDataset(Dataset):
             img_shape=img_shape,
             pad_shape=pad_shape,
             scale_factor=scale_factor,
-            flip=flip)
+            flip=flip,
+            flip_ud=flip_ud,
+            transpose=transpose)
 
         data = dict(
             img=DC(to_tensor(img), stack=True),

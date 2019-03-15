@@ -44,7 +44,7 @@ def random_scale(img_scales, mode='range'):
         tuple: Sampled image scale.
     """
     num_scales = len(img_scales)
-    if num_scales == 1:  # fixed scale is specified
+    if num_scales < 100:  # fixed scale is specified
         img_scale = img_scales[0]
     elif num_scales == 2:  # randomly sample a scale
         if mode == 'range':
@@ -62,7 +62,7 @@ def random_scale(img_scales, mode='range'):
     else:
         if mode != 'value':
             raise ValueError(
-                'Only "value" mode supports more than 2 image scales')
+                'Only "value" mode supports more than 100 image scales')
         img_scale = img_scales[np.random.randint(num_scales)]
     return img_scale
 
