@@ -48,6 +48,7 @@ class CustomDataset(Dataset):
                  flip_ud_ratio=0,
                  transpose_ratio=0,
                  blur_ratio=0,
+                 use_norm_img=False,
                  with_mask=True,
                  with_crowd=True,
                  with_label=True,
@@ -84,7 +85,8 @@ class CustomDataset(Dataset):
         self.flip_ud_ratio = flip_ud_ratio
         self.transpose_ratio = transpose_ratio
         self.blur_ratio = blur_ratio
-        assert flip_ratio >= 0 and flip_ratio <= 1
+        self.use_norm_img = use_norm_img
+        assert 0 <= flip_ratio <= 1
         assert 0 <= flip_ud_ratio <= 1
         assert 0 <= transpose_ratio <= 1
         assert 0 <= blur_ratio <= 1
@@ -171,9 +173,10 @@ class CustomDataset(Dataset):
         img_info = self.img_infos[idx]
         # load image
         img = mmcv.imread(osp.join(self.img_prefix, img_info['filename']))
+        # img blur
         if np.random.rand() < self.blur_ratio:
-            sigma = np.random.randint(0, 21)
-            img = cv2.GaussianBlur(img, (15, 15), sigma)
+            sigma = np.random.uniform(0.1, 5)
+            img = cv2.GaussianBlur(img, (5, 5), sigma)
         # load proposals if necessary
         if self.proposals is not None:
             proposals = self.proposals[idx][:self.num_max_proposals]
@@ -213,7 +216,8 @@ class CustomDataset(Dataset):
         transpose = True if np.random.rand() < self.transpose_ratio else False
         img_scale = random_scale(self.img_scales)  # sample a scale
         img, img_shape, pad_shape, scale_factor = self.img_transform(
-            img, img_scale, flip, flip_ud=flip_ud, keep_ratio=self.resize_keep_ratio, transpose=transpose)
+            img, img_scale, flip, flip_ud=flip_ud, keep_ratio=self.resize_keep_ratio, transpose=transpose,
+            use_norm_img=self.use_norm_img)
         img = img.copy()
         if self.proposals is not None:
             proposals = self.bbox_transform(proposals, img_shape, scale_factor,

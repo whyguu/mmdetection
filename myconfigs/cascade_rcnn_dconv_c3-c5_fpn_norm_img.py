@@ -165,7 +165,6 @@ data = dict(
         size_divisor=32,
         flip_ratio=0.5,
         flip_ud_ratio=0.5,
-        use_norm_img=True,
         # transpose_ratio=0.5,
         # extra_aug={'photo_metric_distortion': {'brightness_delta': 16,
         #                                        'contrast_range': (0.8, 1.2),
@@ -210,7 +209,7 @@ log_config = dict(
 total_epochs = 30
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-work_dir = './myweights/cascade_dc3_5_r101_ep30_bs2_ohem123_frz0_cw_3s_exp'
+work_dir = './myweights/cascade_dc3_5_r101_ep30_bs2_cw_3s_exp_norm_img'
 # load_from = None
 load_from = '/root/.torch/models/cascade_rcnn_dconv_c3-c5_r101_fpn_6cls.pth'
 # load_from = './myweights/cascade_dc3_5_r101_ep20_bs2_ohem1_cw/epoch_10.pth'

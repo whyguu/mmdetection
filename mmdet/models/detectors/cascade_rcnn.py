@@ -7,8 +7,13 @@ from .base import BaseDetector
 from .test_mixins import RPNTestMixin
 from .. import builder
 from ..registry import DETECTORS
-from mmdet.core import (assign_and_sample, bbox2roi, bbox2result, multi_apply,
+from mmdet.core import (assign_and_sample, bbox2roi, bbox2result, multi_apply, build_assigner, build_sampler,
                         merge_aug_masks)
+from mmcv.utils import Config
+import numpy as np
+from mmdet.datasets.transforms import bbox_flip
+from functools import partial
+from mmdet.ops.nms.nms_wrapper import nms, soft_nms
 
 
 @DETECTORS.register_module
@@ -135,13 +140,33 @@ class CascadeRCNN(BaseDetector, RPNTestMixin):
             lw = self.train_cfg.stage_loss_weights[i]
 
             # assign gts and sample proposals
-            assign_results, sampling_results = multi_apply(
-                assign_and_sample,
-                proposal_list,
-                gt_bboxes,
-                gt_bboxes_ignore,
-                gt_labels,
-                cfg=rcnn_train_cfg)
+            # assign_results, sampling_results = multi_apply(
+            #     assign_and_sample,
+            #     proposal_list,
+            #     gt_bboxes,
+            #     gt_bboxes_ignore,
+            #     gt_labels,
+            #     cfg=rcnn_train_cfg)
+            # adjust for ohemsampler
+            context = Config({'bbox_roi_extractor': self.bbox_roi_extractor[i],
+                              'bbox_head': self.bbox_head[i]})
+            bbox_assigner = build_assigner(rcnn_train_cfg.assigner)
+            bbox_sampler = build_sampler(rcnn_train_cfg.sampler, context=context)
+            num_imgs = img.size(0)
+            if gt_bboxes_ignore is None:
+                gt_bboxes_ignore = [None for _ in range(num_imgs)]
+            sampling_results = []
+            for si in range(num_imgs):
+                assign_result = bbox_assigner.assign(
+                    proposal_list[si], gt_bboxes[si], gt_bboxes_ignore[si],
+                    gt_labels[si])
+                sampling_result = bbox_sampler.sample(
+                    assign_result,
+                    proposal_list[si],
+                    gt_bboxes[si],
+                    gt_labels[si],
+                    feats=[lvl_feat[si][None] for lvl_feat in x])
+                sampling_results.append(sampling_result)
 
             # bbox head forward and loss
             bbox_roi_extractor = self.bbox_roi_extractor[i]
@@ -149,7 +174,7 @@ class CascadeRCNN(BaseDetector, RPNTestMixin):
 
             rois = bbox2roi([res.bboxes for res in sampling_results])
             bbox_feats = bbox_roi_extractor(x[:bbox_roi_extractor.num_inputs],
-                                            rois)
+                                            rois, img_shape=img.shape[2:4])
             cls_score, bbox_pred = bbox_head(bbox_feats)
 
             bbox_targets = bbox_head.get_target(sampling_results, gt_bboxes,
@@ -209,7 +234,7 @@ class CascadeRCNN(BaseDetector, RPNTestMixin):
             bbox_head = self.bbox_head[i]
 
             bbox_feats = bbox_roi_extractor(
-                x[:len(bbox_roi_extractor.featmap_strides)], rois)
+                x[:len(bbox_roi_extractor.featmap_strides)], rois, img_shape=img.shape[2:4])
             cls_score, bbox_pred = bbox_head(bbox_feats)
             ms_scores.append(cls_score)
 
@@ -306,7 +331,33 @@ class CascadeRCNN(BaseDetector, RPNTestMixin):
         return results
 
     def aug_test(self, img, img_meta, proposals=None, rescale=False):
-        raise NotImplementedError
+        # bug if flip_up or transpose
+        if proposals is None:
+            proposals = [None for _ in range(len(img))]
+        p_func = partial(self.simple_test, rescale=rescale)
+        img_results = list(map(p_func, img, img_meta, proposals))
+        # print(len(img_meta))
+        # print(len(img_meta[0]))
+        for i, meta in enumerate(img_meta):
+            meta = meta[0]
+            if not meta['flip']:
+                continue
+            for j, bbox in enumerate(img_results[i]):
+                if bbox.shape[0] == 0:
+                    continue
+                # print(bbox.shape)
+                bx = bbox_flip(bbox[:, 0:-1], meta['ori_shape'])
+                bbox[:, 0:-1] = bx
+                # print(img_results[i][j] - bbox)
+        r = []
+        for dt in zip(*img_results):
+            r.append(np.concatenate(dt, axis=0))
+        iou_thr = self.test_cfg.rcnn.nms.iou_thr
+        # print(iou_thr)
+        p_nms = partial(nms, iou_thr=iou_thr)
+        r = list(map(p_nms, r))
+        r = list(map(lambda x: x[0], r))
+        return r
 
     def show_result(self, data, result, img_norm_cfg, **kwargs):
         if self.with_mask:

@@ -1,6 +1,8 @@
 import mmcv
 import numpy as np
 import torch
+import glob
+import cv2
 
 __all__ = ['ImageTransform', 'BboxTransform', 'MaskTransform', 'Numpy2Tensor']
 
@@ -24,8 +26,29 @@ class ImageTransform(object):
         self.std = np.array(std, dtype=np.float32)
         self.to_rgb = to_rgb
         self.size_divisor = size_divisor
+        # tricks using normal img
+        self.normal_img_prefix = 'x-ray/jinnan2_round1_train_20190305/normal/'
+        self.normal_img = glob.glob1(self.normal_img_prefix, '*jpg')
 
-    def __call__(self, img, scale, flip=False, keep_ratio=True, flip_ud=False, transpose=False):
+    def __call__(self, img, scale, flip=False, keep_ratio=True,
+                 flip_ud=False, transpose=False, use_norm_img=False):
+        if use_norm_img:
+            if np.random.rand() < 0.5:
+                norm_img_idx = np.random.randint(0, len(self.normal_img))
+                normal_img = mmcv.imread(self.normal_img_prefix+self.normal_img[norm_img_idx])
+                h, w = img.shape[0:2]
+                h1, w1 = normal_img.shape[0:2]
+                if (h > w) != (h1 > w1):
+                    normal_img = normal_img.transpose(1, 0, 2)
+                normal_img = mmcv.imrescale(normal_img, (h, w), return_scale=False)
+                h1, w1 = normal_img.shape[0:2]
+                # norm img weight
+                # alpha = np.random.uniform(0.1, 0.9)
+                alpha = 0.5
+                cv2.addWeighted(normal_img, alpha, img[0:h1, 0:w1], 1-alpha, 0, img[0:h1, 0:w1])
+                # cv2.imwrite('mix_norm.jpg', img)
+                # exit()
+
         if transpose:
             img = img.transpose(1, 0, 2)
             sl = list(scale)

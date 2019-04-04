@@ -9,6 +9,11 @@ from mmdet import datasets
 from mmdet.core import results2json, coco_eval
 from mmdet.datasets import build_dataloader
 from mmdet.models import build_detector, detectors
+from mytools.common import box_vote
+import os
+import sys
+sys.path.insert(0, '.')
+from mytools.prepare_and_submit import SubmitFormat
 
 
 def single_test(model, data_loader, show=False):
@@ -36,7 +41,7 @@ def _data_func(data, device_id):
     return dict(return_loss=False, rescale=True, **data)
 
 
-def parse_args():
+def parse_args(args):
     parser = argparse.ArgumentParser(description='MMDet test detector')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
@@ -55,12 +60,12 @@ def parse_args():
         choices=['proposal', 'proposal_fast', 'bbox', 'segm', 'keypoints'],
         help='eval types')
     parser.add_argument('--show', action='store_true', help='show results')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     return args
 
 
-def main():
-    args = parse_args()
+def main(args):
+    args = parse_args(args)
 
     if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
         raise ValueError('The output file must be a pkl file.')
@@ -101,7 +106,7 @@ def main():
             workers_per_gpu=args.proc_per_gpu)
 
     if args.out:
-        print('writing results to {}'.format(args.out))
+        print('\nwriting results to {}'.format(args.out))
         mmcv.dump(outputs, args.out)
         eval_types = args.eval
         if eval_types:
@@ -122,6 +127,27 @@ def main():
                         results2json(dataset, outputs_, result_file)
                         coco_eval(result_file, eval_types, dataset.coco)
 
+    return outputs
+
 
 if __name__ == '__main__':
-    main()
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    config_file_name = 'cascade_rcnn_dconv_c3-c5_fpn.py'
+    work_dir = 'cascade_dc3_5_r101_ep30_bs2_ohem123_frz0_cw_3s_exp'
+
+    mode = 'test'
+    suffix = 'aug'
+    print(work_dir, config_file_name, mode, suffix)
+    arguments = [
+        f'myconfigs/{config_file_name}',
+        f'myweights/{work_dir}/epoch_30.pth',
+        '--gpus=1',  # 'GPU number used for testing'
+        # '--eval=bbox',
+        f'--out=myweights/{work_dir}/{mode}_ep30_{suffix}.pkl',
+    ]
+
+    pkl_file = main(arguments)
+    save_path = f'myweights/{work_dir}/{mode}_{work_dir}_{suffix}.json'
+    pkl_file = box_vote(pkl_file, 0.5)
+    SubmitFormat.test_pkl2json_format(pkl_file, save_path)
+

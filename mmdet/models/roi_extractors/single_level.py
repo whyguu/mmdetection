@@ -70,7 +70,13 @@ class SingleRoIExtractor(nn.Module):
         target_lvls = target_lvls.clamp(min=0, max=num_levels - 1).long()
         return target_lvls
 
-    def forward(self, feats, rois):
+    def forward(self, feats, rois, img_shape=None):
+        """
+        :param feats:
+        :param rois:
+        :param img_shape: (height, width), rescaled img shape or padded shape not orig shape
+        :return:
+        """
         if len(feats) == 1:
             return self.roi_layers[0](feats[0], rois)
 
@@ -79,10 +85,25 @@ class SingleRoIExtractor(nn.Module):
         target_lvls = self.map_roi_levels(rois, num_levels)
         roi_feats = torch.cuda.FloatTensor(rois.size()[0], self.out_channels,
                                            out_size, out_size).fill_(0)
+        if img_shape is not None:
+            rois_copy = rois.clone()
+            expand_ratio = 0.25
+            w_h = (rois_copy[:, 3:5] - rois_copy[:, 1:3]) * expand_ratio
+            rois_delta = torch.cat([-w_h, w_h], dim=1)
+            rois_copy[:, 1:5] += rois_delta
+            torch.clamp(rois_copy[:, 1:3], 0, out=rois_copy[:, 1:3])
+            torch.clamp(rois_copy[:, 3], 0, img_shape[1], out=rois_copy[:, 3])
+            torch.clamp(rois_copy[:, 4], 0, img_shape[0], out=rois_copy[:, 4])
         for i in range(num_levels):
             inds = target_lvls == i
             if inds.any():
                 rois_ = rois[inds, :]
                 roi_feats_t = self.roi_layers[i](feats[i], rois_)
                 roi_feats[inds] += roi_feats_t
+
+                # trick (add extra background info)
+                if img_shape is not None:
+                    rois_ = rois_copy[inds, :]
+                    roi_feats_t = self.roi_layers[i](feats[i], rois_)
+                    roi_feats[inds] += roi_feats_t
         return roi_feats

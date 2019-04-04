@@ -89,10 +89,10 @@ def main(args):
 if __name__ == '__main__':
     import os
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
     arguments = [
-        'myconfigs/cascade_rcnn_r50_fpn_1x.py',
-        '--gpus=2',
+        'myconfigs/cascade_rcnn_dconv_c3-c5_fpn_norm_img.py',
+        '--gpus=1',
     ]
     main(arguments)
